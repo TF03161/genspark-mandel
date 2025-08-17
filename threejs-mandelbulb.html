@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultimate Mandelbulb - Three.js Ray Marching</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #000;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            cursor: grab;
+        }
+        
+        body:active {
+            cursor: grabbing;
+        }
+        
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        #controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(20px);
+            border: 2px solid #00ffff;
+            border-radius: 15px;
+            padding: 20px;
+            z-index: 1000;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        #controls h2 {
+            text-align: center;
+            margin-bottom: 20px;
+            background: linear-gradient(90deg, #ff00ff, #00ffff, #ffff00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 20px;
+        }
+        
+        .control-group {
+            margin: 15px 0;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #00ffff;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .control-group input[type="range"] {
+            width: 100%;
+            margin: 5px 0;
+        }
+        
+        .control-group span {
+            color: #ffff00;
+            float: right;
+            font-size: 12px;
+        }
+        
+        .button-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        button {
+            padding: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+        
+        button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        button.active {
+            background: linear-gradient(135deg, #00ff88 0%, #00ffff 100%);
+            color: #000;
+        }
+        
+        #quality-select {
+            width: 100%;
+            padding: 8px;
+            background: #222;
+            color: white;
+            border: 1px solid #00ffff;
+            border-radius: 5px;
+            margin: 5px 0;
+        }
+        
+        #info {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 12px;
+            z-index: 100;
+        }
+        
+        #info div {
+            margin: 5px 0;
+        }
+        
+        .highlight {
+            color: #00ffff;
+        }
+        
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 24px;
+            color: #00ffff;
+            z-index: 2000;
+            text-align: center;
+        }
+        
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.1); }
+        }
+        
+        /* Scrollbar styling */
+        #controls::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        #controls::-webkit-scrollbar-track {
+            background: rgba(0, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+        
+        #controls::-webkit-scrollbar-thumb {
+            background: rgba(0, 255, 255, 0.5);
+            border-radius: 4px;
+        }
+        
+        #controls::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 255, 255, 0.7);
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="pulse">
+        Initializing Ray Marcher...<br>
+        <small>Loading Three.js</small>
+    </div>
+    
+    <canvas id="canvas"></canvas>
+    
+    <div id="info">
+        <div>FPS: <span class="highlight" id="fps">60</span></div>
+        <div>Resolution: <span class="highlight" id="resolution">1920x1080</span></div>
+        <div>Ray Steps: <span class="highlight" id="raySteps">128</span></div>
+        <div>Mode: <span class="highlight" id="mode">STANDARD</span></div>
+    </div>
+    
+    <div id="controls">
+        <h2>🌌 MANDELBULB RAY MARCHER 🌌</h2>
+        
+        <div class="control-group">
+            <label>Rendering Mode</label>
+            <select id="quality-select">
+                <option value="performance">Performance (60 FPS)</option>
+                <option value="balanced" selected>Balanced (30 FPS)</option>
+                <option value="quality">Quality (15 FPS)</option>
+                <option value="ultra">Ultra (Variable FPS)</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
+            <label>Power <span id="powerValue">8.0</span></label>
+            <input type="range" id="power" min="2" max="16" step="0.1" value="8">
+        </div>
+        
+        <div class="control-group">
+            <label>Iterations <span id="iterationsValue">15</span></label>
+            <input type="range" id="iterations" min="5" max="30" step="1" value="15">
+        </div>
+        
+        <div class="control-group">
+            <label>Glow Intensity <span id="glowValue">0.5</span></label>
+            <input type="range" id="glow" min="0" max="2" step="0.1" value="0.5">
+        </div>
+        
+        <div class="control-group">
+            <label>Color Shift <span id="colorShiftValue">0.0</span></label>
+            <input type="range" id="colorShift" min="0" max="6.28" step="0.01" value="0">
+        </div>
+        
+        <div class="control-group">
+            <label>AO Strength <span id="aoValue">0.8</span></label>
+            <input type="range" id="aoStrength" min="0" max="2" step="0.1" value="0.8">
+        </div>
+        
+        <div class="control-group">
+            <label>Shadow Softness <span id="shadowValue">2.0</span></label>
+            <input type="range" id="shadowSoftness" min="0" max="5" step="0.1" value="2">
+        </div>
+        
+        <div class="button-grid">
+            <button id="autoRotate">🔄 Auto Rotate</button>
+            <button id="animate">🌊 Animate</button>
+            <button id="colorMode">🎨 Color Mode</button>
+            <button id="reset">↺ Reset</button>
+        </div>
+        
+        <div class="control-group">
+            <label>Presets</label>
+            <div class="button-grid">
+                <button class="preset" data-preset="classic">Classic</button>
+                <button class="preset" data-preset="organic">Organic</button>
+                <button class="preset" data-preset="crystal">Crystal</button>
+                <button class="preset" data-preset="alien">Alien</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Three.js CDN -->
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.159.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.159.0/examples/jsm/"
+        }
+    }
+    </script>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        
+        // Hide loading
+        setTimeout(() => {
+            document.getElementById('loading').style.display = 'none';
+        }, 1000);
+        
+        // Vertex Shader
+        const vertexShader = `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = vec4(position, 1.0);
+            }
+        `;
+        
+        // Fragment Shader - Ray Marching
+        const fragmentShader = `
+            precision highp float;
+            
+            uniform vec2 resolution;
+            uniform float time;
+            uniform vec3 cameraPos;
+            uniform mat4 cameraMatrix;
+            uniform float power;
+            uniform int iterations;
+            uniform float glowIntensity;
+            uniform float colorShift;
+            uniform float aoStrength;
+            uniform float shadowSoftness;
+            uniform int maxSteps;
+            uniform int colorMode;
+            uniform bool animate;
+            
+            varying vec2 vUv;
+            
+            #define MAX_STEPS 256
+            #define MAX_DIST 100.0
+            #define SURF_DIST 0.0001
+            #define EPSILON 0.0001
+            
+            // Rotate functions
+            mat2 rot2(float a) {
+                float s = sin(a);
+                float c = cos(a);
+                return mat2(c, -s, s, c);
+            }
+            
+            // Mandelbulb SDF
+            float mandelbulbSDF(vec3 pos) {
+                vec3 z = pos;
+                float dr = 1.0;
+                float r = 0.0;
+                float power_t = animate ? power + sin(time * 0.1) * 2.0 : power;
+                
+                for(int i = 0; i < 30; i++) {
+                    if(i >= iterations) break;
+                    
+                    r = length(z);
+                    if(r > 2.0) break;
+                    
+                    // Convert to polar coordinates
+                    float theta = acos(z.z / r);
+                    float phi = atan(z.y, z.x);
+                    dr = pow(r, power_t - 1.0) * power_t * dr + 1.0;
+                    
+                    // Scale and rotate the point
+                    float zr = pow(r, power_t);
+                    theta = theta * power_t;
+                    phi = phi * power_t;
+                    
+                    // Convert back to cartesian coordinates
+                    z = zr * vec3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
+                    z += pos;
+                }
+                
+                return 0.5 * log(r) * r / dr;
+            }
+            
+            // Scene SDF
+            float sceneSDF(vec3 p) {
+                // Add rotation animation
+                if(animate) {
+                    p.xz *= rot2(time * 0.1);
+                    p.xy *= rot2(time * 0.07);
+                }
+                return mandelbulbSDF(p);
+            }
+            
+            // Normal calculation
+            vec3 getNormal(vec3 p) {
+                vec2 e = vec2(EPSILON, 0.0);
+                vec3 n = vec3(
+                    sceneSDF(p + e.xyy) - sceneSDF(p - e.xyy),
+                    sceneSDF(p + e.yxy) - sceneSDF(p - e.yxy),
+                    sceneSDF(p + e.yyx) - sceneSDF(p - e.yyx)
+                );
+                return normalize(n);
+            }
+            
+            // Soft shadows
+            float softShadow(vec3 ro, vec3 rd, float mint, float maxt, float k) {
+                float res = 1.0;
+                float t = mint;
+                for(int i = 0; i < 64; i++) {
+                    if(t > maxt) break;
+                    float h = sceneSDF(ro + rd * t);
+                    res = min(res, k * h / t);
+                    t += clamp(h, 0.001, 0.1);
+                    if(h < 0.0001) break;
+                }
+                return clamp(res, 0.0, 1.0);
+            }
+            
+            // Ambient Occlusion
+            float ambientOcclusion(vec3 p, vec3 n) {
+                float occ = 0.0;
+                float sca = 1.0;
+                for(int i = 0; i < 5; i++) {
+                    float h = 0.01 + 0.12 * float(i) / 4.0;
+                    float d = sceneSDF(p + h * n);
+                    occ += (h - d) * sca;
+                    sca *= 0.95;
+                }
+                return clamp(1.0 - 3.0 * occ, 0.0, 1.0);
+            }
+            
+            // Color palette
+            vec3 getColor(float t, vec3 p, vec3 n) {
+                vec3 color;
+                
+                if(colorMode == 0) {
+                    // Standard mode
+                    color = 0.5 + 0.5 * cos(6.28318 * (t + colorShift + vec3(0.0, 0.33, 0.67)));
+                } else if(colorMode == 1) {
+                    // Psychedelic mode
+                    float angle = atan(p.y, p.x);
+                    color = 0.5 + 0.5 * cos(angle * 3.0 + time + vec3(0.0, 2.0, 4.0));
+                } else if(colorMode == 2) {
+                    // Normal-based coloring
+                    color = n * 0.5 + 0.5;
+                } else {
+                    // Distance-based
+                    float d = length(p);
+                    color = vec3(0.1, 0.3, 0.5) + vec3(0.8, 0.5, 0.2) * (1.0 - exp(-d * 2.0));
+                }
+                
+                return color;
+            }
+            
+            // Ray marching
+            float rayMarch(vec3 ro, vec3 rd, out vec3 p) {
+                float dO = 0.0;
+                for(int i = 0; i < MAX_STEPS; i++) {
+                    if(i >= maxSteps) break;
+                    p = ro + rd * dO;
+                    float dS = sceneSDF(p);
+                    dO += dS;
+                    if(dO > MAX_DIST || abs(dS) < SURF_DIST) break;
+                }
+                return dO;
+            }
+            
+            // Main rendering
+            void main() {
+                vec2 uv = (gl_FragCoord.xy - 0.5 * resolution.xy) / resolution.y;
+                
+                // Camera setup
+                vec3 ro = cameraPos;
+                vec3 rd = normalize(vec3(uv, 1.0));
+                rd = (cameraMatrix * vec4(rd, 0.0)).xyz;
+                
+                vec3 col = vec3(0.0);
+                vec3 p;
+                
+                // Ray march
+                float d = rayMarch(ro, rd, p);
+                
+                if(d < MAX_DIST) {
+                    vec3 n = getNormal(p);
+                    
+                    // Lighting
+                    vec3 lightPos = vec3(5.0, 5.0, -5.0);
+                    vec3 lightDir = normalize(lightPos - p);
+                    float diff = max(dot(n, lightDir), 0.0);
+                    
+                    // Shadows
+                    float shadow = softShadow(p + n * 0.001, lightDir, 0.01, 10.0, shadowSoftness);
+                    
+                    // AO
+                    float ao = ambientOcclusion(p, n);
+                    ao = pow(ao, aoStrength);
+                    
+                    // Color
+                    vec3 baseColor = getColor(d / 5.0, p, n);
+                    
+                    // Combine lighting
+                    col = baseColor * (0.3 + 0.7 * diff * shadow) * ao;
+                    
+                    // Specular
+                    vec3 halfVec = normalize(lightDir - rd);
+                    float spec = pow(max(dot(n, halfVec), 0.0), 32.0);
+                    col += vec3(1.0) * spec * shadow * 0.5;
+                    
+                    // Rim lighting
+                    float rim = 1.0 - max(dot(n, -rd), 0.0);
+                    col += baseColor * pow(rim, 3.0) * 0.3;
+                    
+                    // Fog
+                    float fog = 1.0 - exp(-d * 0.1);
+                    col = mix(col, vec3(0.02, 0.02, 0.05), fog);
+                }
+                
+                // Glow effect
+                float glow = exp(-d * 0.5) * glowIntensity;
+                col += vec3(0.1, 0.3, 0.5) * glow;
+                
+                // Tone mapping and gamma correction
+                col = col / (col + vec3(1.0));
+                col = pow(col, vec3(0.4545));
+                
+                gl_FragColor = vec4(col, 1.0);
+            }
+        `;
+        
+        // Global variables
+        let scene, camera, renderer, controls;
+        let material, mesh;
+        let clock = new THREE.Clock();
+        let autoRotate = false;
+        let animate = false;
+        let colorMode = 0;
+        let stats = {
+            fps: 0,
+            frameCount: 0,
+            lastTime: performance.now()
+        };
+        
+        // Parameters
+        const params = {
+            power: 8.0,
+            iterations: 15,
+            glowIntensity: 0.5,
+            colorShift: 0.0,
+            aoStrength: 0.8,
+            shadowSoftness: 2.0,
+            maxSteps: 128
+        };
+        
+        // Presets
+        const presets = {
+            classic: { power: 8, iterations: 15, glowIntensity: 0.5, colorShift: 0 },
+            organic: { power: 6, iterations: 12, glowIntensity: 0.8, colorShift: 2.0 },
+            crystal: { power: 12, iterations: 20, glowIntensity: 0.3, colorShift: 4.0 },
+            alien: { power: 5, iterations: 18, glowIntensity: 1.2, colorShift: 3.14 }
+        };
+        
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 0, 3);
+            
+            // Renderer setup
+            const canvas = document.getElementById('canvas');
+            renderer = new THREE.WebGLRenderer({ 
+                canvas: canvas,
+                antialias: false,
+                powerPreference: "high-performance"
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 1;
+            controls.maxDistance = 10;
+            
+            // Create fullscreen quad
+            const geometry = new THREE.BufferGeometry();
+            const vertices = new Float32Array([
+                -1, -1, 0,
+                 3, -1, 0,
+                -1,  3, 0
+            ]);
+            geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+            
+            // Create material
+            material = new THREE.ShaderMaterial({
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader,
+                uniforms: {
+                    resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+                    time: { value: 0 },
+                    cameraPos: { value: camera.position },
+                    cameraMatrix: { value: camera.matrixWorldInverse },
+                    power: { value: params.power },
+                    iterations: { value: params.iterations },
+                    glowIntensity: { value: params.glowIntensity },
+                    colorShift: { value: params.colorShift },
+                    aoStrength: { value: params.aoStrength },
+                    shadowSoftness: { value: params.shadowSoftness },
+                    maxSteps: { value: params.maxSteps },
+                    colorMode: { value: colorMode },
+                    animate: { value: animate }
+                }
+            });
+            
+            mesh = new THREE.Mesh(geometry, material);
+            scene.add(mesh);
+            
+            // Setup controls
+            setupControls();
+            
+            // Start animation
+            animate_loop();
+        }
+        
+        function setupControls() {
+            // Power slider
+            const powerSlider = document.getElementById('power');
+            const powerValue = document.getElementById('powerValue');
+            powerSlider.addEventListener('input', (e) => {
+                params.power = parseFloat(e.target.value);
+                powerValue.textContent = params.power.toFixed(1);
+                material.uniforms.power.value = params.power;
+            });
+            
+            // Iterations slider
+            const iterationsSlider = document.getElementById('iterations');
+            const iterationsValue = document.getElementById('iterationsValue');
+            iterationsSlider.addEventListener('input', (e) => {
+                params.iterations = parseInt(e.target.value);
+                iterationsValue.textContent = params.iterations;
+                material.uniforms.iterations.value = params.iterations;
+            });
+            
+            // Glow slider
+            const glowSlider = document.getElementById('glow');
+            const glowValue = document.getElementById('glowValue');
+            glowSlider.addEventListener('input', (e) => {
+                params.glowIntensity = parseFloat(e.target.value);
+                glowValue.textContent = params.glowIntensity.toFixed(1);
+                material.uniforms.glowIntensity.value = params.glowIntensity;
+            });
+            
+            // Color shift slider
+            const colorShiftSlider = document.getElementById('colorShift');
+            const colorShiftValue = document.getElementById('colorShiftValue');
+            colorShiftSlider.addEventListener('input', (e) => {
+                params.colorShift = parseFloat(e.target.value);
+                colorShiftValue.textContent = params.colorShift.toFixed(2);
+                material.uniforms.colorShift.value = params.colorShift;
+            });
+            
+            // AO slider
+            const aoSlider = document.getElementById('aoStrength');
+            const aoValue = document.getElementById('aoValue');
+            aoSlider.addEventListener('input', (e) => {
+                params.aoStrength = parseFloat(e.target.value);
+                aoValue.textContent = params.aoStrength.toFixed(1);
+                material.uniforms.aoStrength.value = params.aoStrength;
+            });
+            
+            // Shadow slider
+            const shadowSlider = document.getElementById('shadowSoftness');
+            const shadowValue = document.getElementById('shadowValue');
+            shadowSlider.addEventListener('input', (e) => {
+                params.shadowSoftness = parseFloat(e.target.value);
+                shadowValue.textContent = params.shadowSoftness.toFixed(1);
+                material.uniforms.shadowSoftness.value = params.shadowSoftness;
+            });
+            
+            // Quality select
+            const qualitySelect = document.getElementById('quality-select');
+            qualitySelect.addEventListener('change', (e) => {
+                switch(e.target.value) {
+                    case 'performance':
+                        params.maxSteps = 64;
+                        renderer.setPixelRatio(1);
+                        break;
+                    case 'balanced':
+                        params.maxSteps = 128;
+                        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+                        break;
+                    case 'quality':
+                        params.maxSteps = 192;
+                        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                        break;
+                    case 'ultra':
+                        params.maxSteps = 256;
+                        renderer.setPixelRatio(window.devicePixelRatio);
+                        break;
+                }
+                material.uniforms.maxSteps.value = params.maxSteps;
+                document.getElementById('raySteps').textContent = params.maxSteps;
+                onWindowResize();
+            });
+            
+            // Buttons
+            document.getElementById('autoRotate').addEventListener('click', (e) => {
+                autoRotate = !autoRotate;
+                e.target.classList.toggle('active');
+                controls.autoRotate = autoRotate;
+                controls.autoRotateSpeed = 1.0;
+            });
+            
+            document.getElementById('animate').addEventListener('click', (e) => {
+                animate = !animate;
+                e.target.classList.toggle('active');
+                material.uniforms.animate.value = animate;
+            });
+            
+            document.getElementById('colorMode').addEventListener('click', (e) => {
+                colorMode = (colorMode + 1) % 4;
+                material.uniforms.colorMode.value = colorMode;
+                const modes = ['STANDARD', 'PSYCHEDELIC', 'NORMAL', 'DISTANCE'];
+                document.getElementById('mode').textContent = modes[colorMode];
+            });
+            
+            document.getElementById('reset').addEventListener('click', () => {
+                camera.position.set(0, 0, 3);
+                camera.lookAt(0, 0, 0);
+                controls.reset();
+                params.power = 8.0;
+                params.iterations = 15;
+                params.glowIntensity = 0.5;
+                params.colorShift = 0.0;
+                updateSliders();
+            });
+            
+            // Presets
+            document.querySelectorAll('.preset').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const preset = presets[e.target.dataset.preset];
+                    Object.assign(params, preset);
+                    updateSliders();
+                    updateUniforms();
+                });
+            });
+        }
+        
+        function updateSliders() {
+            document.getElementById('power').value = params.power;
+            document.getElementById('powerValue').textContent = params.power.toFixed(1);
+            document.getElementById('iterations').value = params.iterations;
+            document.getElementById('iterationsValue').textContent = params.iterations;
+            document.getElementById('glow').value = params.glowIntensity;
+            document.getElementById('glowValue').textContent = params.glowIntensity.toFixed(1);
+            document.getElementById('colorShift').value = params.colorShift;
+            document.getElementById('colorShiftValue').textContent = params.colorShift.toFixed(2);
+        }
+        
+        function updateUniforms() {
+            material.uniforms.power.value = params.power;
+            material.uniforms.iterations.value = params.iterations;
+            material.uniforms.glowIntensity.value = params.glowIntensity;
+            material.uniforms.colorShift.value = params.colorShift;
+            material.uniforms.aoStrength.value = params.aoStrength;
+            material.uniforms.shadowSoftness.value = params.shadowSoftness;
+        }
+        
+        function animate_loop() {
+            requestAnimationFrame(animate_loop);
+            
+            // Update time
+            const elapsedTime = clock.getElapsedTime();
+            material.uniforms.time.value = elapsedTime;
+            
+            // Update camera
+            controls.update();
+            camera.updateMatrixWorld();
+            material.uniforms.cameraPos.value = camera.position;
+            material.uniforms.cameraMatrix.value = camera.matrixWorldInverse;
+            
+            // Render
+            renderer.render(scene, camera);
+            
+            // Update FPS
+            stats.frameCount++;
+            const currentTime = performance.now();
+            if (currentTime >= stats.lastTime + 1000) {
+                stats.fps = Math.round((stats.frameCount * 1000) / (currentTime - stats.lastTime));
+                document.getElementById('fps').textContent = stats.fps;
+                stats.frameCount = 0;
+                stats.lastTime = currentTime;
+            }
+        }
+        
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            material.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
+            document.getElementById('resolution').textContent = `${window.innerWidth}x${window.innerHeight}`;
+        }
+        
+        window.addEventListener('resize', onWindowResize);
+        
+        // Initialize
+        init();
+        onWindowResize();
+    </script>
+</body>
+</html>
