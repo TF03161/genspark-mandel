@@ -11,7 +11,7 @@
 
 ## 🚀 Live Demo
 - **Production**: https://3000-i9ol75pf5jooei0lrot7p-6532622b.e2b.dev/threejs-mandelbulb.html
-- **GitHub**: (GitHubリポジトリURL - push後に更新)
+- **GitHub**: https://github.com/TF03161/genspark-mandel
 
 ## 📁 File Structure
 ```
